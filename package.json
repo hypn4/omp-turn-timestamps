@@ -1,0 +1,35 @@
+{
+  "name": "omp-turn-timestamps",
+  "version": "0.1.0",
+  "description": "Native Oh My Pi plugin that records prompt-to-settle start/end timestamps and elapsed time in the transcript.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hypn4/omp-turn-timestamps.git"
+  },
+  "keywords": [
+    "oh-my-pi",
+    "omp",
+    "plugin",
+    "extension",
+    "timestamps",
+    "observability"
+  ],
+  "files": [
+    "src/index.ts",
+    "src/format.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "bun test"
+  },
+  "omp": {
+    "name": "Turn Timestamps",
+    "description": "Shows when each user-prompt agent loop started, when it settled, and how long it took.",
+    "extensions": [
+      "./src/index.ts"
+    ]
+  }
+}

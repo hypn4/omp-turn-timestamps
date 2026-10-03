@@ -68,9 +68,71 @@ describe("tool-card renderer patch", () => {
 		setToolCardTiming("call-2", makeTiming());
 
 		const lines = component.render(80);
-		expect(lines).toHaveLength(4);
-		expect(lines[2]).toContain("◷ 2026-10-03");
-		expect(lines[3]).toContain("╰");
+		expect(lines).toHaveLength(5);
+		expect(lines[2]).toContain("◷ 2026-10-03 · turn");
+		expect(lines[3]).toContain("tool 21:47:12.103–21:47:12.792");
+		expect(lines[4]).toContain("╰");
+	});
+
+	test("wraps timing by semantic segments when the bordered card is narrow", () => {
+		clearToolCardTimingsForTests();
+		class FakeToolExecution {
+			setExecutionStarted() {}
+			updateResult() {}
+			describe() {
+				return { k: "card", p: { key: "call-narrow" } };
+			}
+			render() {
+				return [
+					"╭──────────────────────────────────────────────────╮",
+					"│ output                                           │",
+					"╰──────────────────────────────────────────────────╯",
+				];
+			}
+		}
+
+		patchToolExecutionDescribe(FakeToolExecution);
+		const component = new FakeToolExecution();
+		component.setExecutionStarted("call-narrow");
+		setToolCardTiming("call-narrow", {
+			...makeTiming(),
+			toolDisplay: { showMilliseconds: true, showDuration: true },
+		});
+
+		const lines = component.render(52);
+		const plain = lines.map(line => line.replace(/\x1b\[[0-9;]*m/g, ""));
+		expect(plain).toContain("│ ◷ 2026-10-03 · turn 21:47:10–21:47:12 (2.8s)     │");
+		expect(plain.some(line => line.includes("turn 21:47:10–21:47:12 (2.8s)"))).toBe(true);
+		expect(plain.some(line => line.includes("tool 21:47:12.103–21:47:12.792 (689ms)"))).toBe(true);
+		expect(plain.at(-1)).toContain("╰");
+	});
+
+	test("hard-wraps an overlong timing segment instead of truncating it", () => {
+		clearToolCardTimingsForTests();
+		class FakeToolExecution {
+			setExecutionStarted() {}
+			updateResult() {}
+			describe() {
+				return { k: "card", p: { key: "call-tiny" } };
+			}
+			render() {
+				return ["Read ~/foo.ts"];
+			}
+		}
+
+		patchToolExecutionDescribe(FakeToolExecution);
+		const component = new FakeToolExecution();
+		component.updateResult({}, false, "call-tiny");
+		setToolCardTiming("call-tiny", {
+			tool: makeTiming().tool,
+			toolDisplay: { showMilliseconds: true, showDuration: true },
+		});
+
+		const plain = component
+			.render(28)
+			.map(line => line.replace(/\x1b\[[0-9;]*m/g, ""));
+		const timingText = plain.slice(1).map(line => line.trim()).join("");
+		expect(timingText).toContain("◷ tool 2026-10-0321:47:12.103–21:47:12.792(689ms)");
 	});
 
 	test("adds a compact timing line below an inline ANSI tool component", () => {

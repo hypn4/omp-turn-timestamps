@@ -114,7 +114,7 @@ export function formatTurnCardTiming({ startedAtMs, completedAtMs }: Timing): st
 	return `turn ${formatDate(start)} ${formatTime(start)}–${endLabel} (${formatDuration(completedAtMs - startedAtMs)})`;
 }
 
-export function formatToolCardSummary({ tool, turn, toolDisplay }: ToolCardTimings): string | undefined {
+export function formatToolCardSegments({ tool, turn, toolDisplay }: ToolCardTimings): string[] {
 	const options = toolDisplay ?? { showMilliseconds: true, showDuration: false };
 	if (tool && turn && isSameTimingDate(tool, turn)) {
 		const date = formatDate(new Date(tool.startedAtMs));
@@ -125,12 +125,17 @@ export function formatToolCardSummary({ tool, turn, toolDisplay }: ToolCardTimin
 			`◷ ${date}`,
 			`turn ${formatTime(new Date(turn.startedAtMs))}–${formatTime(new Date(turn.completedAtMs))} (${formatDuration(turn.completedAtMs - turn.startedAtMs)})`,
 			`tool ${formatTime(new Date(tool.startedAtMs), options.showMilliseconds)}–${formatTime(new Date(tool.completedAtMs), options.showMilliseconds)}${toolDuration}`,
-		].join(" · ");
+		];
 	}
-	if (tool && turn) return `◷ ${formatTurnCardTiming(turn)} · tool ${formatToolCardTiming(tool, options)}`;
-	if (tool) return `◷ tool ${formatToolCardTiming(tool, options)}`;
-	if (turn) return `◷ ${formatTurnCardTiming(turn)}`;
-	return undefined;
+	if (tool && turn) return [`◷ ${formatTurnCardTiming(turn)}`, `tool ${formatToolCardTiming(tool, options)}`];
+	if (tool) return [`◷ tool ${formatToolCardTiming(tool, options)}`];
+	if (turn) return [`◷ ${formatTurnCardTiming(turn)}`];
+	return [];
+}
+
+export function formatToolCardSummary(timings: ToolCardTimings): string | undefined {
+	const segments = formatToolCardSegments(timings);
+	return segments.length > 0 ? segments.join(" · ") : undefined;
 }
 
 export function formatTurnTimingLine(timing: Timing): string {

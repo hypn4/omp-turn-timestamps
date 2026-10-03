@@ -2,7 +2,7 @@
 
 A native [Oh My Pi](https://omp.sh) plugin that records timing at the OMP turn boundary and can optionally record each tool execution from `tool_call` to `tool_result`.
 
-Timing is added to OMP's existing tool cards instead of creating a separate card. The compact row keeps the date once, puts the turn range first, and adds the optional tool range second:
+Timing is added to OMP's existing tool cards instead of creating a separate card. At normal widths it stays compact:
 
 ```text
 Bash  printf 'hello\n'
@@ -11,7 +11,16 @@ Bash  printf 'hello\n'
   ⟨Wall: 0.69s | Timeout: 300s⟩
 ```
 
-`showTurnTiming` is enabled by default. On a tool-bearing turn, the turn range and its elapsed time are attached to the last completed tool card. `showToolTiming` is optional and adds the tool's absolute start/end clock to that tool's own card. OMP already renders the tool elapsed duration, so the plugin deliberately does not repeat the tool duration.
+When the pane gets narrower, the presentation layer automatically reflows at semantic boundaries instead of truncating timestamps:
+
+```text
+  ◷ 2026-10-03 · turn 21:47:10–21:47:12 (2s)
+  tool 21:47:12.103–21:47:12.792
+```
+
+At very narrow widths it can expand to separate date, turn, and tool rows; if even one semantic row is too wide, that row word-wraps and finally hard-wraps rather than losing the end of the timestamp.
+
+`showTurnTiming` is enabled by default. On a tool-bearing turn, the turn range and its elapsed time are attached to the last completed tool card. `showToolTiming` is optional and adds the tool's absolute start/end clock to that tool's own card. OMP already renders the tool elapsed duration, so the plugin deliberately does not repeat the tool duration unless `showToolDuration` is enabled.
 
 The plugin patches only the presentation layer. It does not modify the actual tool output or inject timing text into provider context. A terminal turn with no tool card has nowhere to attach its timestamp, so that case alone falls back to a small transcript timing card after the agent settles.
 

@@ -22,15 +22,10 @@ function createHarness(settings: Partial<TimingSettings> = {}) {
 
 	const pi = {
 		setLabel: () => {},
-		on: (event: string, handler: Handler) => {
-			handlers.set(event, handler);
-		},
-		sendMessage: (message: any, options: any) => {
-			sent.push({ message, options });
-		},
-		appendEntry: (customType: string, data: any) => {
-			entries.push({ customType, data });
-		},
+		pi: { ToolExecutionComponent: undefined },
+		on: (event: string, handler: Handler) => handlers.set(event, handler),
+		sendMessage: (message: any, options: any) => sent.push({ message, options }),
+		appendEntry: (customType: string, data: any) => entries.push({ customType, data }),
 		logger: {
 			warn: (...args: unknown[]) => warnings.push(args),
 		},
@@ -54,7 +49,7 @@ function assistantWithTools(...ids: string[]) {
 }
 
 describe("turn timestamps extension", () => {
-	test("puts tool and turn timing on the existing tool card", async () => {
+	test("stores tool and turn timing for the existing tool card", async () => {
 		clearToolCardTimingsForTests();
 		const originalNow = Date.now;
 		const start = new Date(2026, 9, 3, 21, 47, 12, 0).getTime();
@@ -88,13 +83,10 @@ describe("turn timestamps extension", () => {
 				ctx,
 			);
 
-			const displayAtResult = getToolCardTimingForTests("call-1");
-			expect(displayAtResult?.tool).toBe(
-				"2026-10-03 21:47:12.103 → 21:47:12.792",
-			);
-			expect(displayAtResult?.turn).toBe(
-				"turn 2026-10-03 21:47:12 → 21:47:12 · 792ms",
-			);
+			expect(getToolCardTimingForTests("call-1")).toEqual({
+				tool: { startedAtMs: start + 103, completedAtMs: start + 792 },
+				turn: { startedAtMs: start, completedAtMs: start + 792 },
+			});
 
 			now = start + 800;
 			await handlers.get("turn_end")?.(
@@ -102,10 +94,10 @@ describe("turn timestamps extension", () => {
 				ctx,
 			);
 
-			const displayAtTurnEnd = getToolCardTimingForTests("call-1");
-			expect(displayAtTurnEnd?.turn).toBe(
-				"turn 2026-10-03 21:47:12 → 21:47:12 · 800ms",
-			);
+			expect(getToolCardTimingForTests("call-1")?.turn).toEqual({
+				startedAtMs: start,
+				completedAtMs: start + 792,
+			});
 			expect(sent).toHaveLength(0);
 			expect(entries.map(entry => entry.customType)).toEqual([
 				"omp-turn-timestamps.tool",
@@ -117,7 +109,7 @@ describe("turn timestamps extension", () => {
 		}
 	});
 
-	test("puts the turn timing only on the last completed tool card", async () => {
+	test("puts the turn timing on the last completed tool card", async () => {
 		clearToolCardTimingsForTests();
 		const originalNow = Date.now;
 		const start = new Date(2026, 9, 3, 21, 50, 0).getTime();
@@ -146,7 +138,10 @@ describe("turn timestamps extension", () => {
 				content: [],
 				isError: false,
 			});
-			expect(getToolCardTimingForTests("call-a")?.tool).toContain("21:50:00.010");
+			expect(getToolCardTimingForTests("call-a")?.tool).toEqual({
+				startedAtMs: start + 10,
+				completedAtMs: start + 50,
+			});
 			expect(getToolCardTimingForTests("call-a")?.turn).toBeUndefined();
 
 			now += 50;
@@ -158,8 +153,14 @@ describe("turn timestamps extension", () => {
 				content: [],
 				isError: false,
 			});
-			expect(getToolCardTimingForTests("call-b")?.tool).toContain("21:50:00.020");
-			expect(getToolCardTimingForTests("call-b")?.turn).toContain("turn 2026-10-03");
+			expect(getToolCardTimingForTests("call-b")?.tool).toEqual({
+				startedAtMs: start + 20,
+				completedAtMs: start + 100,
+			});
+			expect(getToolCardTimingForTests("call-b")?.turn).toEqual({
+				startedAtMs: start,
+				completedAtMs: start + 100,
+			});
 		} finally {
 			Date.now = originalNow;
 		}
@@ -168,8 +169,8 @@ describe("turn timestamps extension", () => {
 	test("keeps per-tool timing disabled by default while attaching turn timing", async () => {
 		clearToolCardTimingsForTests();
 		const originalNow = Date.now;
-		let now = new Date(2026, 9, 3, 22, 0, 0).getTime();
-		const start = now;
+		const start = new Date(2026, 9, 3, 22, 0, 0).getTime();
+		let now = start;
 		Date.now = () => now;
 
 		try {
@@ -192,7 +193,10 @@ describe("turn timestamps extension", () => {
 
 			const timing = getToolCardTimingForTests("call");
 			expect(timing?.tool).toBeUndefined();
-			expect(timing?.turn).toContain("turn 2026-10-03");
+			expect(timing?.turn).toEqual({
+				startedAtMs: start,
+				completedAtMs: start + 1_500,
+			});
 			expect(entries.some(entry => entry.customType === "omp-turn-timestamps.tool")).toBe(false);
 		} finally {
 			Date.now = originalNow;
@@ -202,8 +206,8 @@ describe("turn timestamps extension", () => {
 	test("can show tool timing while hiding turn timing", async () => {
 		clearToolCardTimingsForTests();
 		const originalNow = Date.now;
-		let now = new Date(2026, 9, 3, 22, 5, 0).getTime();
-		const start = now;
+		const start = new Date(2026, 9, 3, 22, 5, 0).getTime();
+		let now = start;
 		Date.now = () => now;
 
 		try {
@@ -225,9 +229,9 @@ describe("turn timestamps extension", () => {
 				isError: false,
 			});
 
-			const timing = getToolCardTimingForTests("call");
-			expect(timing?.tool).toContain("22:05:00.050");
-			expect(timing?.turn).toBeUndefined();
+			expect(getToolCardTimingForTests("call")).toEqual({
+				tool: { startedAtMs: start + 50, completedAtMs: start + 150 },
+			});
 		} finally {
 			Date.now = originalNow;
 		}
@@ -236,8 +240,8 @@ describe("turn timestamps extension", () => {
 	test("uses a custom card only when a turn has no tool card to attach to", async () => {
 		clearToolCardTimingsForTests();
 		const originalNow = Date.now;
-		let now = new Date(2026, 9, 3, 22, 10, 0).getTime();
-		const start = now;
+		const start = new Date(2026, 9, 3, 22, 10, 0).getTime();
+		let now = start;
 		Date.now = () => now;
 
 		try {
@@ -264,6 +268,10 @@ describe("turn timestamps extension", () => {
 	test("hydrates in-card timing from structured session metadata", async () => {
 		clearToolCardTimingsForTests();
 		const { handlers } = createHarness();
+		const toolStart = Date.parse("2026-10-03T12:00:00.100Z");
+		const toolEnd = Date.parse("2026-10-03T12:00:00.600Z");
+		const turnStart = Date.parse("2026-10-03T12:00:00.000Z");
+		const turnEnd = Date.parse("2026-10-03T12:00:01.000Z");
 		const branch = [
 			{
 				type: "custom",
@@ -295,9 +303,10 @@ describe("turn timestamps extension", () => {
 			{ mode: "rpc", sessionManager: { getBranch: () => branch } },
 		);
 
-		const restored = getToolCardTimingForTests("restored");
-		expect(restored?.tool).toContain("2026-10-03");
-		expect(restored?.turn).toContain("turn 2026-10-03");
+		expect(getToolCardTimingForTests("restored")).toEqual({
+			tool: { startedAtMs: toolStart, completedAtMs: toolEnd },
+			turn: { startedAtMs: turnStart, completedAtMs: turnEnd },
+		});
 	});
 
 	test("removes the no-tool fallback card from provider context", async () => {

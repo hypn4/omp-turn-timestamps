@@ -1,11 +1,10 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { formatTurnTimingLine, type Timing } from "./format";
 import {
-	formatToolCardTiming,
-	formatTurnCardTiming,
-	formatTurnTimingLine,
-	type Timing,
-} from "./format";
-import { installToolCardTimingPatch, setToolCardTiming } from "./tool-card";
+	installToolCardTimingPatch,
+	setToolCardTiming,
+	type ToolExecutionConstructor,
+} from "./tool-card";
 
 const PLUGIN_NAME = "omp-turn-timestamps";
 const TURN_CUSTOM_TYPE = "omp-turn-timestamp";
@@ -31,7 +30,9 @@ interface ActiveTurn {
 	completedToolResults: number;
 	turnTimingAttached: boolean;
 	displayToolCallId?: string;
+	displayCompletedAtMs?: number;
 	settings: TimingSettings;
+	settingsReady: Promise<TimingSettings>;
 }
 
 interface ToolStart {
@@ -114,7 +115,7 @@ function hydrateToolCardTimings(entries: readonly unknown[]): void {
 			const details = candidate.data as { toolCallId?: unknown };
 			const timing = timingFromDetails(candidate.data);
 			if (typeof details.toolCallId !== "string" || !timing) continue;
-			setToolCardTiming(details.toolCallId, { tool: formatToolCardTiming(timing) });
+			setToolCardTiming(details.toolCallId, { tool: timing });
 			continue;
 		}
 
@@ -123,7 +124,7 @@ function hydrateToolCardTimings(entries: readonly unknown[]): void {
 			const details = candidate.data as { displayToolCallId?: unknown };
 			const timing = timingFromDetails(candidate.data);
 			if (typeof details.displayToolCallId !== "string" || !timing) continue;
-			setToolCardTiming(details.displayToolCallId, { turn: formatTurnCardTiming(timing) });
+			setToolCardTiming(details.displayToolCallId, { turn: timing });
 		}
 	}
 }
@@ -133,52 +134,60 @@ function createExtension(loadSettings: SettingsLoader) {
 		let activeTurn: ActiveTurn | undefined;
 		const toolStarts = new Map<string, ToolStart>();
 		const pendingTerminalTurns: Array<{ details: TurnTimestampDetails; timing: Timing }> = [];
-		let patchPromise: Promise<void> | undefined;
+		let cachedSettings = DEFAULT_SETTINGS;
 
 		pi.setLabel("Turn timestamps");
 
-		const ensureToolCardPatch = async (mode: string) => {
-			if (mode !== "tui") return;
-			patchPromise ??= installToolCardTimingPatch().catch(error => {
-				patchPromise = undefined;
-				pi.logger.warn("Failed to install tool-card timing renderer", {
+		try {
+			installToolCardTimingPatch(
+				pi.pi.ToolExecutionComponent as unknown as ToolExecutionConstructor,
+			);
+		} catch (error) {
+			pi.logger.warn("Failed to install tool-card timing renderer", {
+				extension: PLUGIN_NAME,
+				error: String(error),
+			});
+		}
+
+		const refreshSettings = async (cwd: string): Promise<TimingSettings> => {
+			try {
+				cachedSettings = await loadSettings(cwd);
+			} catch (error) {
+				pi.logger.warn("Failed to load turn timestamp settings; using cached/default values", {
 					extension: PLUGIN_NAME,
 					error: String(error),
 				});
-			});
-			await patchPromise;
+			}
+			return cachedSettings;
 		};
 
-		const restoreCardTimings = async (_event: unknown, ctx: { mode: string; sessionManager: { getBranch(): readonly unknown[] } }) => {
-			await ensureToolCardPatch(ctx.mode);
+		const restoreCardTimings = async (
+			_event: unknown,
+			ctx: { cwd: string; sessionManager: { getBranch(): readonly unknown[] } },
+		) => {
 			hydrateToolCardTimings(ctx.sessionManager.getBranch());
+			await refreshSettings(ctx.cwd);
 		};
 
 		pi.on("session_start", restoreCardTimings);
 		pi.on("session_switch", restoreCardTimings);
 		pi.on("session_branch", restoreCardTimings);
 
-		pi.on("turn_start", async (event, ctx) => {
-			await ensureToolCardPatch(ctx.mode);
-			let settings = DEFAULT_SETTINGS;
-			try {
-				settings = await loadSettings(ctx.cwd);
-			} catch (error) {
-				pi.logger.warn("Failed to load turn timestamp settings; using defaults", {
-					extension: PLUGIN_NAME,
-					error: String(error),
-				});
-			}
-
-			activeTurn = {
+		pi.on("turn_start", (event, ctx) => {
+			const turn: ActiveTurn = {
 				turnIndex: event.turnIndex,
 				startedAtMs: event.timestamp,
 				expectedToolResults: 0,
 				completedToolResults: 0,
 				turnTimingAttached: false,
-				settings,
+				settings: cachedSettings,
+				settingsReady: refreshSettings(ctx.cwd),
 			};
+			activeTurn = turn;
 			toolStarts.clear();
+			void turn.settingsReady.then(settings => {
+				if (activeTurn === turn) turn.settings = settings;
+			});
 		});
 
 		pi.on("message_end", async event => {
@@ -189,7 +198,7 @@ function createExtension(loadSettings: SettingsLoader) {
 
 		pi.on("tool_call", async event => {
 			const turn = activeTurn;
-			if (!turn?.settings.showToolTiming) return;
+			if (!turn) return;
 			toolStarts.set(event.toolCallId, {
 				toolName: event.toolName,
 				startedAtMs: Date.now(),
@@ -201,6 +210,7 @@ function createExtension(loadSettings: SettingsLoader) {
 			const turn = activeTurn;
 			if (!turn) return;
 
+			turn.settings = await turn.settingsReady;
 			const completedAtMs = Date.now();
 			turn.completedToolResults++;
 
@@ -218,7 +228,7 @@ function createExtension(loadSettings: SettingsLoader) {
 					isError: event.isError,
 				};
 				pi.appendEntry(TOOL_RECORD_TYPE, details);
-				setToolCardTiming(event.toolCallId, { tool: formatToolCardTiming(timing) });
+				setToolCardTiming(event.toolCallId, { tool: timing });
 			}
 
 			const isLastToolResult =
@@ -231,24 +241,23 @@ function createExtension(loadSettings: SettingsLoader) {
 				};
 				turn.turnTimingAttached = true;
 				turn.displayToolCallId = event.toolCallId;
-				setToolCardTiming(event.toolCallId, { turn: formatTurnCardTiming(timing) });
+				turn.displayCompletedAtMs = completedAtMs;
+				setToolCardTiming(event.toolCallId, { turn: timing });
 			}
 		});
 
 		pi.on("turn_end", async event => {
 			const turn = activeTurn;
 			if (!turn || turn.turnIndex !== event.turnIndex) return;
-
+			turn.settings = await turn.settingsReady;
 			const timing: Timing = {
 				startedAtMs: turn.startedAtMs,
-				completedAtMs: Date.now(),
+				completedAtMs: turn.displayCompletedAtMs ?? Date.now(),
 			};
 			const details = timingDetails(turn.turnIndex, timing, turn.displayToolCallId);
 			pi.appendEntry(TURN_RECORD_TYPE, details);
 
-			if (turn.settings.showTurnTiming && turn.displayToolCallId) {
-				setToolCardTiming(turn.displayToolCallId, { turn: formatTurnCardTiming(timing) });
-			} else if (turn.settings.showTurnTiming && !turn.turnTimingAttached) {
+			if (turn.settings.showTurnTiming && !turn.turnTimingAttached) {
 				pendingTerminalTurns.push({ details, timing });
 			}
 

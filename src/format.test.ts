@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	formatDuration,
+	formatToolCardSummary,
 	formatToolCardTiming,
 	formatToolTimingLine,
 	formatTurnCardTiming,
@@ -54,15 +55,29 @@ describe("tool card formatting", () => {
 		const startedAtMs = new Date(2026, 9, 3, 21, 47, 12, 103).getTime();
 		const completedAtMs = new Date(2026, 9, 3, 21, 47, 12, 792).getTime();
 		expect(formatToolCardTiming({ startedAtMs, completedAtMs })).toBe(
-			"2026-10-03 21:47:12.103 → 21:47:12.792",
+			"2026-10-03 21:47:12.103–21:47:12.792",
 		);
 	});
 
-	test("labels the turn range for the final tool card", () => {
+	test("keeps the turn duration because it is distinct from the tool wall time", () => {
 		const startedAtMs = new Date(2026, 9, 3, 21, 47, 12).getTime();
 		const completedAtMs = new Date(2026, 9, 3, 21, 47, 15, 200).getTime();
 		expect(formatTurnCardTiming({ startedAtMs, completedAtMs })).toBe(
-			"turn 2026-10-03 21:47:12 → 21:47:15 · 3.2s",
+			"turn 2026-10-03 21:47:12–21:47:15 (3.2s)",
+		);
+	});
+
+	test("combines same-day tool and turn timing into one non-redundant line", () => {
+		const tool = {
+			startedAtMs: new Date(2026, 9, 3, 21, 47, 12, 103).getTime(),
+			completedAtMs: new Date(2026, 9, 3, 21, 47, 12, 792).getTime(),
+		};
+		const turn = {
+			startedAtMs: new Date(2026, 9, 3, 21, 47, 10).getTime(),
+			completedAtMs: new Date(2026, 9, 3, 21, 47, 12, 792).getTime(),
+		};
+		expect(formatToolCardSummary({ tool, turn })).toBe(
+			"◷ 2026-10-03 · turn 21:47:10–21:47:12 (2.8s) · tool 21:47:12.103–21:47:12.792",
 		);
 	});
 });

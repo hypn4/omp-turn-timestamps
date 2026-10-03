@@ -1,7 +1,7 @@
 {
   "name": "omp-turn-timestamps",
-  "version": "0.3.0",
-  "description": "Native Oh My Pi plugin that adds per-turn and optional per-tool timestamps directly to existing tool cards without adding them to model context.",
+  "version": "0.3.1",
+  "description": "Native Oh My Pi plugin that adds compact per-turn and optional per-tool timestamps directly to existing tool cards without adding them to model context.",
   "license": "MIT",
   "type": "module",
   "repository": {

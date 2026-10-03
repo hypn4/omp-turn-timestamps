@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatDuration, formatTurnTimingLine } from "./format";
+import { formatDuration, formatToolTimingLine, formatTurnTimingLine } from "./format";
 
 describe("formatDuration", () => {
 	test("formats short turns with fractional seconds", () => {
@@ -18,7 +18,7 @@ describe("formatTurnTimingLine", () => {
 		const completedAtMs = new Date(2026, 9, 3, 20, 43, 55).getTime();
 
 		expect(formatTurnTimingLine({ startedAtMs, completedAtMs })).toBe(
-			"◷ 2026-10-03 20:31:14 → 20:43:55 · 12m 41s",
+			"◷ turn 2026-10-03 20:31:14 → 20:43:55 · 12m 41s",
 		);
 	});
 
@@ -27,7 +27,18 @@ describe("formatTurnTimingLine", () => {
 		const completedAtMs = new Date(2026, 9, 4, 0, 0, 30).getTime();
 
 		expect(formatTurnTimingLine({ startedAtMs, completedAtMs })).toBe(
-			"◷ 2026-10-03 23:59:30 → 2026-10-04 00:00:30 · 1m",
+			"◷ turn 2026-10-03 23:59:30 → 2026-10-04 00:00:30 · 1m",
+		);
+	});
+});
+
+describe("formatToolTimingLine", () => {
+	test("keeps millisecond clock precision for short tool calls", () => {
+		const startedAtMs = new Date(2026, 9, 3, 21, 47, 12, 103).getTime();
+		const completedAtMs = new Date(2026, 9, 3, 21, 47, 12, 792).getTime();
+
+		expect(formatToolTimingLine({ toolName: "bash", startedAtMs, completedAtMs })).toBe(
+			"◷ tool bash 2026-10-03 21:47:12.103 → 21:47:12.792 · 689ms",
 		);
 	});
 });

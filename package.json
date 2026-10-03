@@ -1,7 +1,7 @@
 {
   "name": "omp-turn-timestamps",
-  "version": "0.1.0",
-  "description": "Native Oh My Pi plugin that records prompt-to-settle start/end timestamps and elapsed time in the transcript.",
+  "version": "0.2.0",
+  "description": "Native Oh My Pi plugin that records per-turn timestamps and optional per-tool execution timings without adding them to model context.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -27,9 +27,21 @@
   },
   "omp": {
     "name": "Turn Timestamps",
-    "description": "Shows when each user-prompt agent loop started, when it settled, and how long it took.",
+    "description": "Shows per-turn timestamps and optional tool_call-to-tool_result execution timings.",
     "extensions": [
       "./src/index.ts"
-    ]
+    ],
+    "settings": {
+      "showTurnTiming": {
+        "type": "boolean",
+        "default": true,
+        "description": "Show absolute start/end timestamps and elapsed time for each OMP turn."
+      },
+      "showToolTiming": {
+        "type": "boolean",
+        "default": false,
+        "description": "Show tool_call-to-tool_result start/end timestamps and elapsed time for each tool execution."
+      }
+    }
   }
 }

@@ -1,6 +1,10 @@
-export interface TurnTiming {
+export interface Timing {
 	startedAtMs: number;
 	completedAtMs: number;
+}
+
+export interface ToolTiming extends Timing {
+	toolName: string;
 }
 
 function pad2(value: number): string {
@@ -11,8 +15,9 @@ function formatDate(date: Date): string {
 	return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
-function formatTime(date: Date): string {
-	return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+function formatTime(date: Date, includeMilliseconds = false): string {
+	const base = `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+	return includeMilliseconds ? `${base}.${String(date.getMilliseconds()).padStart(3, "0")}` : base;
 }
 
 function isSameLocalDate(a: Date, b: Date): boolean {
@@ -50,12 +55,20 @@ export function formatDuration(elapsedMs: number): string {
 	return parts.join(" ");
 }
 
-export function formatTurnTimingLine({ startedAtMs, completedAtMs }: TurnTiming): string {
+function formatTimingRange({ startedAtMs, completedAtMs }: Timing, includeMilliseconds = false): string {
 	const start = new Date(startedAtMs);
 	const end = new Date(completedAtMs);
-	const startLabel = `${formatDate(start)} ${formatTime(start)}`;
-	const endLabel = isSameLocalDate(start, end) ? formatTime(end) : `${formatDate(end)} ${formatTime(end)}`;
-	const elapsed = formatDuration(completedAtMs - startedAtMs);
+	const startLabel = `${formatDate(start)} ${formatTime(start, includeMilliseconds)}`;
+	const endLabel = isSameLocalDate(start, end)
+		? formatTime(end, includeMilliseconds)
+		: `${formatDate(end)} ${formatTime(end, includeMilliseconds)}`;
+	return `${startLabel} → ${endLabel} · ${formatDuration(completedAtMs - startedAtMs)}`;
+}
 
-	return `◷ ${startLabel} → ${endLabel} · ${elapsed}`;
+export function formatTurnTimingLine(timing: Timing): string {
+	return `◷ turn ${formatTimingRange(timing)}`;
+}
+
+export function formatToolTimingLine({ toolName, ...timing }: ToolTiming): string {
+	return `◷ tool ${toolName} ${formatTimingRange(timing, true)}`;
 }

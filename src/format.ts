@@ -7,9 +7,15 @@ export interface ToolTiming extends Timing {
 	toolName: string;
 }
 
+export interface ToolDisplayOptions {
+	showMilliseconds: boolean;
+	showDuration: boolean;
+}
+
 export interface ToolCardTimings {
 	tool?: Timing;
 	turn?: Timing;
+	toolDisplay?: ToolDisplayOptions;
 }
 
 function pad2(value: number): string {
@@ -86,13 +92,17 @@ export function formatTimingRange({ startedAtMs, completedAtMs }: Timing, includ
 	return `${startLabel} → ${endLabel} · ${formatDuration(completedAtMs - startedAtMs)}`;
 }
 
-export function formatToolCardTiming({ startedAtMs, completedAtMs }: Timing): string {
+export function formatToolCardTiming(
+	{ startedAtMs, completedAtMs }: Timing,
+	options: ToolDisplayOptions = { showMilliseconds: true, showDuration: false },
+): string {
 	const start = new Date(startedAtMs);
 	const end = new Date(completedAtMs);
 	const endLabel = isSameLocalDate(start, end)
-		? formatTime(end, true)
-		: `${formatDate(end)} ${formatTime(end, true)}`;
-	return `${formatDate(start)} ${formatTime(start, true)}–${endLabel}`;
+		? formatTime(end, options.showMilliseconds)
+		: `${formatDate(end)} ${formatTime(end, options.showMilliseconds)}`;
+	const duration = options.showDuration ? ` (${formatDuration(completedAtMs - startedAtMs)})` : "";
+	return `${formatDate(start)} ${formatTime(start, options.showMilliseconds)}–${endLabel}${duration}`;
 }
 
 export function formatTurnCardTiming({ startedAtMs, completedAtMs }: Timing): string {
@@ -104,17 +114,21 @@ export function formatTurnCardTiming({ startedAtMs, completedAtMs }: Timing): st
 	return `turn ${formatDate(start)} ${formatTime(start)}–${endLabel} (${formatDuration(completedAtMs - startedAtMs)})`;
 }
 
-export function formatToolCardSummary({ tool, turn }: ToolCardTimings): string | undefined {
+export function formatToolCardSummary({ tool, turn, toolDisplay }: ToolCardTimings): string | undefined {
+	const options = toolDisplay ?? { showMilliseconds: true, showDuration: false };
 	if (tool && turn && isSameTimingDate(tool, turn)) {
 		const date = formatDate(new Date(tool.startedAtMs));
+		const toolDuration = options.showDuration
+			? ` (${formatDuration(tool.completedAtMs - tool.startedAtMs)})`
+			: "";
 		return [
 			`◷ ${date}`,
 			`turn ${formatTime(new Date(turn.startedAtMs))}–${formatTime(new Date(turn.completedAtMs))} (${formatDuration(turn.completedAtMs - turn.startedAtMs)})`,
-			`tool ${formatTime(new Date(tool.startedAtMs), true)}–${formatTime(new Date(tool.completedAtMs), true)}`,
+			`tool ${formatTime(new Date(tool.startedAtMs), options.showMilliseconds)}–${formatTime(new Date(tool.completedAtMs), options.showMilliseconds)}${toolDuration}`,
 		].join(" · ");
 	}
-	if (tool && turn) return `◷ ${formatTurnCardTiming(turn)} · tool ${formatToolCardTiming(tool)}`;
-	if (tool) return `◷ ${formatDate(new Date(tool.startedAtMs))} · tool ${formatTime(new Date(tool.startedAtMs), true)}–${formatTime(new Date(tool.completedAtMs), true)}`;
+	if (tool && turn) return `◷ ${formatTurnCardTiming(turn)} · tool ${formatToolCardTiming(tool, options)}`;
+	if (tool) return `◷ tool ${formatToolCardTiming(tool, options)}`;
 	if (turn) return `◷ ${formatTurnCardTiming(turn)}`;
 	return undefined;
 }

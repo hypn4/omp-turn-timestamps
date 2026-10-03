@@ -80,4 +80,30 @@ describe("tool card formatting", () => {
 			"◷ 2026-10-03 · turn 21:47:10–21:47:12 (2.8s) · tool 21:47:12.103–21:47:12.792",
 		);
 	});
+
+	test("can hide tool milliseconds", () => {
+		const tool = {
+			startedAtMs: new Date(2026, 9, 3, 21, 47, 12, 103).getTime(),
+			completedAtMs: new Date(2026, 9, 3, 21, 47, 12, 792).getTime(),
+		};
+		expect(
+			formatToolCardSummary({
+				tool,
+				toolDisplay: { showMilliseconds: false, showDuration: false },
+			}),
+		).toBe("◷ tool 2026-10-03 21:47:12–21:47:12");
+	});
+
+	test("can show tool elapsed duration in parentheses", () => {
+		const tool = {
+			startedAtMs: new Date(2026, 9, 3, 21, 47, 12, 103).getTime(),
+			completedAtMs: new Date(2026, 9, 3, 21, 47, 12, 792).getTime(),
+		};
+		expect(
+			formatToolCardSummary({
+				tool,
+				toolDisplay: { showMilliseconds: true, showDuration: true },
+			}),
+		).toBe("◷ tool 2026-10-03 21:47:12.103–21:47:12.792 (689ms)");
+	});
 });

@@ -50,10 +50,24 @@ Per-tool timing is disabled by default. Enable it with:
 omp plugin config set omp-turn-timestamps showToolTiming true
 ```
 
-Disable it again with:
+Tool timestamps use millisecond precision by default. Toggle it independently:
 
 ```bash
-omp plugin config set omp-turn-timestamps showToolTiming false
+omp plugin config set omp-turn-timestamps showToolMilliseconds true
+omp plugin config set omp-turn-timestamps showToolMilliseconds false
+```
+
+Tool elapsed duration is hidden by default because OMP already shows `Wall`. Enable the explicit parenthesized duration when desired:
+
+```bash
+omp plugin config set omp-turn-timestamps showToolDuration true
+omp plugin config set omp-turn-timestamps showToolDuration false
+```
+
+With both options enabled, the tool portion renders like:
+
+```text
+tool 21:47:12.103–21:47:12.792 (689ms)
 ```
 
 The settings are read at each `turn_start`, so a changed setting takes effect on the next turn.

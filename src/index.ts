@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { formatTurnTimingLine, type Timing } from "./format";
+import { formatTurnTimingLine, type Timing, type ToolDisplayOptions } from "./format";
 import {
 	installToolCardTimingPatch,
 	setToolCardTiming,
@@ -14,11 +14,15 @@ const TOOL_RECORD_TYPE = "omp-turn-timestamps.tool";
 export interface TimingSettings {
 	showTurnTiming: boolean;
 	showToolTiming: boolean;
+	showToolMilliseconds: boolean;
+	showToolDuration: boolean;
 }
 
 const DEFAULT_SETTINGS: TimingSettings = {
 	showTurnTiming: true,
 	showToolTiming: false,
+	showToolMilliseconds: true,
+	showToolDuration: false,
 };
 
 type SettingsLoader = (cwd: string) => Promise<TimingSettings>;
@@ -53,6 +57,28 @@ interface ToolTimestampDetails extends TurnTimestampDetails {
 	toolCallId: string;
 	toolName: string;
 	isError: boolean;
+	toolDisplay: ToolDisplayOptions;
+}
+
+function toolDisplayOptions(settings: TimingSettings): ToolDisplayOptions {
+	return {
+		showMilliseconds: settings.showToolMilliseconds,
+		showDuration: settings.showToolDuration,
+	};
+}
+
+function toolDisplayFromUnknown(value: unknown): ToolDisplayOptions {
+	if (typeof value !== "object" || value === null) {
+		return {
+			showMilliseconds: DEFAULT_SETTINGS.showToolMilliseconds,
+			showDuration: DEFAULT_SETTINGS.showToolDuration,
+		};
+	}
+	const candidate = value as { showMilliseconds?: unknown; showDuration?: unknown };
+	return {
+		showMilliseconds: booleanSetting(candidate.showMilliseconds, DEFAULT_SETTINGS.showToolMilliseconds),
+		showDuration: booleanSetting(candidate.showDuration, DEFAULT_SETTINGS.showToolDuration),
+	};
 }
 
 function booleanSetting(value: unknown, fallback: boolean): boolean {
@@ -65,6 +91,8 @@ export async function loadTimingSettings(cwd: string): Promise<TimingSettings> {
 	return {
 		showTurnTiming: booleanSetting(settings.showTurnTiming, DEFAULT_SETTINGS.showTurnTiming),
 		showToolTiming: booleanSetting(settings.showToolTiming, DEFAULT_SETTINGS.showToolTiming),
+		showToolMilliseconds: booleanSetting(settings.showToolMilliseconds, DEFAULT_SETTINGS.showToolMilliseconds),
+		showToolDuration: booleanSetting(settings.showToolDuration, DEFAULT_SETTINGS.showToolDuration),
 	};
 }
 
@@ -112,10 +140,13 @@ function hydrateToolCardTimings(entries: readonly unknown[]): void {
 
 		if (candidate.customType === TOOL_RECORD_TYPE) {
 			if (typeof candidate.data !== "object" || candidate.data === null) continue;
-			const details = candidate.data as { toolCallId?: unknown };
+			const details = candidate.data as { toolCallId?: unknown; toolDisplay?: unknown };
 			const timing = timingFromDetails(candidate.data);
 			if (typeof details.toolCallId !== "string" || !timing) continue;
-			setToolCardTiming(details.toolCallId, { tool: timing });
+			setToolCardTiming(details.toolCallId, {
+				tool: timing,
+				toolDisplay: toolDisplayFromUnknown(details.toolDisplay),
+			});
 			continue;
 		}
 
@@ -221,14 +252,16 @@ function createExtension(loadSettings: SettingsLoader) {
 					startedAtMs: start.startedAtMs,
 					completedAtMs,
 				};
+				const display = toolDisplayOptions(turn.settings);
 				const details: ToolTimestampDetails = {
 					...timingDetails(start.turnIndex, timing),
 					toolCallId: event.toolCallId,
 					toolName: start.toolName,
 					isError: event.isError,
+					toolDisplay: display,
 				};
 				pi.appendEntry(TOOL_RECORD_TYPE, details);
-				setToolCardTiming(event.toolCallId, { tool: timing });
+				setToolCardTiming(event.toolCallId, { tool: timing, toolDisplay: display });
 			}
 
 			const isLastToolResult =

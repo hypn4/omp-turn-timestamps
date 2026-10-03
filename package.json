@@ -1,7 +1,7 @@
 {
   "name": "omp-turn-timestamps",
-  "version": "0.3.1",
-  "description": "Native Oh My Pi plugin that adds compact per-turn and optional per-tool timestamps directly to existing tool cards without adding them to model context.",
+  "version": "0.4.0",
+  "description": "Native Oh My Pi plugin that adds compact per-turn and configurable per-tool timestamps directly to existing tool cards without adding them to model context.",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -42,6 +42,16 @@
         "type": "boolean",
         "default": false,
         "description": "Show tool_call-to-tool_result start/end timestamps inside each existing tool card."
+      },
+      "showToolMilliseconds": {
+        "type": "boolean",
+        "default": true,
+        "description": "Include millisecond precision in per-tool start/end timestamps."
+      },
+      "showToolDuration": {
+        "type": "boolean",
+        "default": false,
+        "description": "Append the per-tool elapsed duration in parentheses after the tool timestamp range."
       }
     }
   }

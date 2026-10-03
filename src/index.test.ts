@@ -18,6 +18,8 @@ function createHarness(settings: Partial<TimingSettings> = {}) {
 	const resolvedSettings: TimingSettings = {
 		showTurnTiming: settings.showTurnTiming ?? true,
 		showToolTiming: settings.showToolTiming ?? false,
+		showToolMilliseconds: settings.showToolMilliseconds ?? true,
+		showToolDuration: settings.showToolDuration ?? false,
 	};
 
 	const pi = {
@@ -86,6 +88,7 @@ describe("turn timestamps extension", () => {
 			expect(getToolCardTimingForTests("call-1")).toEqual({
 				tool: { startedAtMs: start + 103, completedAtMs: start + 792 },
 				turn: { startedAtMs: start, completedAtMs: start + 792 },
+				toolDisplay: { showMilliseconds: true, showDuration: false },
 			});
 
 			now = start + 800;
@@ -231,6 +234,47 @@ describe("turn timestamps extension", () => {
 
 			expect(getToolCardTimingForTests("call")).toEqual({
 				tool: { startedAtMs: start + 50, completedAtMs: start + 150 },
+				toolDisplay: { showMilliseconds: true, showDuration: false },
+			});
+		} finally {
+			Date.now = originalNow;
+		}
+	});
+
+	test("propagates tool precision and duration display options", async () => {
+		clearToolCardTimingsForTests();
+		const originalNow = Date.now;
+		const start = new Date(2026, 9, 3, 22, 7, 0).getTime();
+		let now = start;
+		Date.now = () => now;
+
+		try {
+			const { handlers, entries } = createHarness({
+				showTurnTiming: false,
+				showToolTiming: true,
+				showToolMilliseconds: false,
+				showToolDuration: true,
+			});
+			await handlers.get("turn_start")?.({ type: "turn_start", turnIndex: 3, timestamp: start }, ctx);
+			now += 40;
+			await handlers.get("tool_call")?.({ type: "tool_call", toolCallId: "display", toolName: "bash", input: {} }, ctx);
+			now += 160;
+			await handlers.get("tool_result")?.({
+				type: "tool_result",
+				toolCallId: "display",
+				toolName: "bash",
+				input: {},
+				content: [],
+				isError: false,
+			});
+
+			expect(getToolCardTimingForTests("display")?.toolDisplay).toEqual({
+				showMilliseconds: false,
+				showDuration: true,
+			});
+			expect(entries[0]?.data.toolDisplay).toEqual({
+				showMilliseconds: false,
+				showDuration: true,
 			});
 		} finally {
 			Date.now = originalNow;
@@ -283,6 +327,7 @@ describe("turn timestamps extension", () => {
 					startedAt: "2026-10-03T12:00:00.100Z",
 					completedAt: "2026-10-03T12:00:00.600Z",
 					elapsedMs: 500,
+					toolDisplay: { showMilliseconds: false, showDuration: true },
 				},
 			},
 			{
@@ -300,12 +345,13 @@ describe("turn timestamps extension", () => {
 
 		await handlers.get("session_start")?.(
 			{ type: "session_start" },
-			{ mode: "rpc", sessionManager: { getBranch: () => branch } },
+			{ cwd: "/tmp", mode: "rpc", sessionManager: { getBranch: () => branch } },
 		);
 
 		expect(getToolCardTimingForTests("restored")).toEqual({
 			tool: { startedAtMs: toolStart, completedAtMs: toolEnd },
 			turn: { startedAtMs: turnStart, completedAtMs: turnEnd },
+			toolDisplay: { showMilliseconds: false, showDuration: true },
 		});
 	});
 

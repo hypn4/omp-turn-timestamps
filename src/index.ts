@@ -1,9 +1,14 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { formatToolTimingLine, formatTurnTimingLine, type Timing } from "./format";
+import {
+	formatToolCardTiming,
+	formatTurnCardTiming,
+	formatTurnTimingLine,
+	type Timing,
+} from "./format";
+import { installToolCardTimingPatch, setToolCardTiming } from "./tool-card";
 
 const PLUGIN_NAME = "omp-turn-timestamps";
 const TURN_CUSTOM_TYPE = "omp-turn-timestamp";
-const TOOL_CUSTOM_TYPE = "omp-tool-timestamp";
 const TURN_RECORD_TYPE = "omp-turn-timestamps.turn";
 const TOOL_RECORD_TYPE = "omp-turn-timestamps.tool";
 
@@ -22,6 +27,10 @@ type SettingsLoader = (cwd: string) => Promise<TimingSettings>;
 interface ActiveTurn {
 	turnIndex: number;
 	startedAtMs: number;
+	expectedToolResults: number;
+	completedToolResults: number;
+	turnTimingAttached: boolean;
+	displayToolCallId?: string;
 	settings: TimingSettings;
 }
 
@@ -36,18 +45,13 @@ interface TurnTimestampDetails {
 	startedAt: string;
 	completedAt: string;
 	elapsedMs: number;
+	displayToolCallId?: string;
 }
 
 interface ToolTimestampDetails extends TurnTimestampDetails {
 	toolCallId: string;
 	toolName: string;
 	isError: boolean;
-}
-
-interface PendingCard {
-	customType: typeof TURN_CUSTOM_TYPE | typeof TOOL_CUSTOM_TYPE;
-	content: string;
-	details: TurnTimestampDetails | ToolTimestampDetails;
 }
 
 function booleanSetting(value: unknown, fallback: boolean): boolean {
@@ -63,46 +67,99 @@ export async function loadTimingSettings(cwd: string): Promise<TimingSettings> {
 	};
 }
 
-function timingDetails(turnIndex: number, timing: Timing): TurnTimestampDetails {
+function timingDetails(
+	turnIndex: number,
+	timing: Timing,
+	displayToolCallId?: string,
+): TurnTimestampDetails {
 	return {
 		turnIndex,
 		startedAt: new Date(timing.startedAtMs).toISOString(),
 		completedAt: new Date(timing.completedAtMs).toISOString(),
 		elapsedMs: Math.max(0, timing.completedAtMs - timing.startedAtMs),
+		...(displayToolCallId ? { displayToolCallId } : {}),
 	};
 }
 
-function hasTerminalYield(toolResults: unknown[]): boolean {
-	return toolResults.some(result => {
-		if (typeof result !== "object" || result === null) return false;
-		const candidate = result as { toolName?: unknown; isError?: unknown };
-		return candidate.toolName === "yield" && candidate.isError !== true;
-	});
+function countToolCalls(message: unknown): number {
+	if (typeof message !== "object" || message === null) return 0;
+	const candidate = message as { role?: unknown; content?: unknown };
+	if (candidate.role !== "assistant" || !Array.isArray(candidate.content)) return 0;
+	return candidate.content.filter(
+		block =>
+			typeof block === "object" &&
+			block !== null &&
+			(block as { type?: unknown }).type === "toolCall",
+	).length;
+}
+
+function timingFromDetails(details: unknown): Timing | undefined {
+	if (typeof details !== "object" || details === null) return undefined;
+	const candidate = details as { startedAt?: unknown; completedAt?: unknown };
+	if (typeof candidate.startedAt !== "string" || typeof candidate.completedAt !== "string") return undefined;
+	const startedAtMs = Date.parse(candidate.startedAt);
+	const completedAtMs = Date.parse(candidate.completedAt);
+	if (!Number.isFinite(startedAtMs) || !Number.isFinite(completedAtMs)) return undefined;
+	return { startedAtMs, completedAtMs };
+}
+
+function hydrateToolCardTimings(entries: readonly unknown[]): void {
+	for (const entry of entries) {
+		if (typeof entry !== "object" || entry === null) continue;
+		const candidate = entry as { type?: unknown; customType?: unknown; data?: unknown };
+		if (candidate.type !== "custom" || typeof candidate.customType !== "string") continue;
+
+		if (candidate.customType === TOOL_RECORD_TYPE) {
+			if (typeof candidate.data !== "object" || candidate.data === null) continue;
+			const details = candidate.data as { toolCallId?: unknown };
+			const timing = timingFromDetails(candidate.data);
+			if (typeof details.toolCallId !== "string" || !timing) continue;
+			setToolCardTiming(details.toolCallId, { tool: formatToolCardTiming(timing) });
+			continue;
+		}
+
+		if (candidate.customType === TURN_RECORD_TYPE) {
+			if (typeof candidate.data !== "object" || candidate.data === null) continue;
+			const details = candidate.data as { displayToolCallId?: unknown };
+			const timing = timingFromDetails(candidate.data);
+			if (typeof details.displayToolCallId !== "string" || !timing) continue;
+			setToolCardTiming(details.displayToolCallId, { turn: formatTurnCardTiming(timing) });
+		}
+	}
 }
 
 function createExtension(loadSettings: SettingsLoader) {
 	return function turnTimestamps(pi: ExtensionAPI) {
 		let activeTurn: ActiveTurn | undefined;
 		const toolStarts = new Map<string, ToolStart>();
-		const pendingTerminalCards: PendingCard[] = [];
+		const pendingTerminalTurns: Array<{ details: TurnTimestampDetails; timing: Timing }> = [];
+		let patchPromise: Promise<void> | undefined;
 
 		pi.setLabel("Turn timestamps");
 
-		const sendCard = (card: PendingCard, deliverAsAside: boolean) => {
-			pi.sendMessage(
-				{
-					customType: card.customType,
-					content: card.content,
-					display: true,
-					details: card.details,
-				},
-				deliverAsAside
-					? { triggerTurn: false, deliverAs: "aside" }
-					: { triggerTurn: false },
-			);
+		const ensureToolCardPatch = async (mode: string) => {
+			if (mode !== "tui") return;
+			patchPromise ??= installToolCardTimingPatch().catch(error => {
+				patchPromise = undefined;
+				pi.logger.warn("Failed to install tool-card timing renderer", {
+					extension: PLUGIN_NAME,
+					error: String(error),
+				});
+			});
+			await patchPromise;
 		};
 
+		const restoreCardTimings = async (_event: unknown, ctx: { mode: string; sessionManager: { getBranch(): readonly unknown[] } }) => {
+			await ensureToolCardPatch(ctx.mode);
+			hydrateToolCardTimings(ctx.sessionManager.getBranch());
+		};
+
+		pi.on("session_start", restoreCardTimings);
+		pi.on("session_switch", restoreCardTimings);
+		pi.on("session_branch", restoreCardTimings);
+
 		pi.on("turn_start", async (event, ctx) => {
+			await ensureToolCardPatch(ctx.mode);
 			let settings = DEFAULT_SETTINGS;
 			try {
 				settings = await loadSettings(ctx.cwd);
@@ -116,9 +173,18 @@ function createExtension(loadSettings: SettingsLoader) {
 			activeTurn = {
 				turnIndex: event.turnIndex,
 				startedAtMs: event.timestamp,
+				expectedToolResults: 0,
+				completedToolResults: 0,
+				turnTimingAttached: false,
 				settings,
 			};
 			toolStarts.clear();
+		});
+
+		pi.on("message_end", async event => {
+			if (!activeTurn) return;
+			const expected = countToolCalls(event.message);
+			if (expected > 0) activeTurn.expectedToolResults = expected;
 		});
 
 		pi.on("tool_call", async event => {
@@ -133,35 +199,40 @@ function createExtension(loadSettings: SettingsLoader) {
 
 		pi.on("tool_result", async event => {
 			const turn = activeTurn;
-			if (!turn?.settings.showToolTiming) return;
+			if (!turn) return;
+
+			const completedAtMs = Date.now();
+			turn.completedToolResults++;
 
 			const start = toolStarts.get(event.toolCallId);
 			toolStarts.delete(event.toolCallId);
-			if (!start) return;
+			if (turn.settings.showToolTiming && start) {
+				const timing: Timing = {
+					startedAtMs: start.startedAtMs,
+					completedAtMs,
+				};
+				const details: ToolTimestampDetails = {
+					...timingDetails(start.turnIndex, timing),
+					toolCallId: event.toolCallId,
+					toolName: start.toolName,
+					isError: event.isError,
+				};
+				pi.appendEntry(TOOL_RECORD_TYPE, details);
+				setToolCardTiming(event.toolCallId, { tool: formatToolCardTiming(timing) });
+			}
 
-			const timing: Timing = {
-				startedAtMs: start.startedAtMs,
-				completedAtMs: Date.now(),
-			};
-			const details: ToolTimestampDetails = {
-				...timingDetails(start.turnIndex, timing),
-				toolCallId: event.toolCallId,
-				toolName: start.toolName,
-				isError: event.isError,
-			};
-			pi.appendEntry(TOOL_RECORD_TYPE, details);
-
-			const card: PendingCard = {
-				customType: TOOL_CUSTOM_TYPE,
-				content: formatToolTimingLine({ toolName: start.toolName, ...timing }),
-				details,
-			};
-
-			// OMP's terminal tool is yield; it intentionally stops before another
-			// model step. Every other completed tool result belongs to a tool-bearing
-			// turn that already has a continuation boundary, so an aside is passive.
-			if (start.toolName === "yield" && !event.isError) pendingTerminalCards.push(card);
-			else sendCard(card, true);
+			const isLastToolResult =
+				turn.expectedToolResults > 0 &&
+				turn.completedToolResults >= turn.expectedToolResults;
+			if (turn.settings.showTurnTiming && isLastToolResult) {
+				const timing: Timing = {
+					startedAtMs: turn.startedAtMs,
+					completedAtMs,
+				};
+				turn.turnTimingAttached = true;
+				turn.displayToolCallId = event.toolCallId;
+				setToolCardTiming(event.toolCallId, { turn: formatTurnCardTiming(timing) });
+			}
 		});
 
 		pi.on("turn_end", async event => {
@@ -172,20 +243,13 @@ function createExtension(loadSettings: SettingsLoader) {
 				startedAtMs: turn.startedAtMs,
 				completedAtMs: Date.now(),
 			};
-			const details = timingDetails(turn.turnIndex, timing);
+			const details = timingDetails(turn.turnIndex, timing, turn.displayToolCallId);
 			pi.appendEntry(TURN_RECORD_TYPE, details);
 
-			if (turn.settings.showTurnTiming) {
-				const card: PendingCard = {
-					customType: TURN_CUSTOM_TYPE,
-					content: formatTurnTimingLine(timing),
-					details,
-				};
-				const toolResults = Array.isArray(event.toolResults) ? event.toolResults : [];
-				const hasPassiveContinuation =
-					toolResults.length > 0 && !hasTerminalYield(toolResults);
-				if (hasPassiveContinuation) sendCard(card, true);
-				else pendingTerminalCards.push(card);
+			if (turn.settings.showTurnTiming && turn.displayToolCallId) {
+				setToolCardTiming(turn.displayToolCallId, { turn: formatTurnCardTiming(timing) });
+			} else if (turn.settings.showTurnTiming && !turn.turnTimingAttached) {
+				pendingTerminalTurns.push({ details, timing });
 			}
 
 			activeTurn = undefined;
@@ -193,18 +257,26 @@ function createExtension(loadSettings: SettingsLoader) {
 		});
 
 		pi.on("agent_end", async event => {
-			if (event.willContinue || pendingTerminalCards.length === 0) return;
-			const pending = pendingTerminalCards.splice(0);
-			for (const card of pending) sendCard(card, false);
+			if (event.willContinue || pendingTerminalTurns.length === 0) return;
+			const pending = pendingTerminalTurns.splice(0);
+			for (const { details, timing } of pending) {
+				pi.sendMessage<TurnTimestampDetails>(
+					{
+						customType: TURN_CUSTOM_TYPE,
+						content: formatTurnTimingLine(timing),
+						display: true,
+						details,
+					},
+					{ triggerTurn: false },
+				);
+			}
 		});
 
-		// Timing cards are transcript-only. Structured appendEntry records are
-		// metadata-only already; remove visible cards from future provider context.
+		// The only visible custom message left is the fallback for a terminal
+		// no-tool turn. Keep it out of future provider context.
 		pi.on("context", async event => {
 			const messages = event.messages.filter(
-				message =>
-					message.role !== "custom" ||
-					(message.customType !== TURN_CUSTOM_TYPE && message.customType !== TOOL_CUSTOM_TYPE),
+				message => message.role !== "custom" || message.customType !== TURN_CUSTOM_TYPE,
 			);
 			return messages.length === event.messages.length ? undefined : { messages };
 		});

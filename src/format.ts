@@ -55,7 +55,7 @@ export function formatDuration(elapsedMs: number): string {
 	return parts.join(" ");
 }
 
-function formatTimingRange({ startedAtMs, completedAtMs }: Timing, includeMilliseconds = false): string {
+export function formatTimingRange({ startedAtMs, completedAtMs }: Timing, includeMilliseconds = false): string {
 	const start = new Date(startedAtMs);
 	const end = new Date(completedAtMs);
 	const startLabel = `${formatDate(start)} ${formatTime(start, includeMilliseconds)}`;
@@ -63,6 +63,16 @@ function formatTimingRange({ startedAtMs, completedAtMs }: Timing, includeMillis
 		? formatTime(end, includeMilliseconds)
 		: `${formatDate(end)} ${formatTime(end, includeMilliseconds)}`;
 	return `${startLabel} → ${endLabel} · ${formatDuration(completedAtMs - startedAtMs)}`;
+}
+
+export function formatToolCardTiming(timing: Timing): string {
+	const range = formatTimingRange(timing, true);
+	const separator = range.lastIndexOf(" · ");
+	return separator === -1 ? range : range.slice(0, separator);
+}
+
+export function formatTurnCardTiming(timing: Timing): string {
+	return `turn ${formatTimingRange(timing)}`;
 }
 
 export function formatTurnTimingLine(timing: Timing): string {

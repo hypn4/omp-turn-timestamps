@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { formatDuration, formatToolTimingLine, formatTurnTimingLine } from "./format";
+import {
+	formatDuration,
+	formatToolCardTiming,
+	formatToolTimingLine,
+	formatTurnCardTiming,
+	formatTurnTimingLine,
+} from "./format";
 
 describe("formatDuration", () => {
 	test("formats short turns with fractional seconds", () => {
@@ -39,6 +45,24 @@ describe("formatToolTimingLine", () => {
 
 		expect(formatToolTimingLine({ toolName: "bash", startedAtMs, completedAtMs })).toBe(
 			"◷ tool bash 2026-10-03 21:47:12.103 → 21:47:12.792 · 689ms",
+		);
+	});
+});
+
+describe("tool card formatting", () => {
+	test("omits duplicate elapsed time from per-tool card metadata", () => {
+		const startedAtMs = new Date(2026, 9, 3, 21, 47, 12, 103).getTime();
+		const completedAtMs = new Date(2026, 9, 3, 21, 47, 12, 792).getTime();
+		expect(formatToolCardTiming({ startedAtMs, completedAtMs })).toBe(
+			"2026-10-03 21:47:12.103 → 21:47:12.792",
+		);
+	});
+
+	test("labels the turn range for the final tool card", () => {
+		const startedAtMs = new Date(2026, 9, 3, 21, 47, 12).getTime();
+		const completedAtMs = new Date(2026, 9, 3, 21, 47, 15, 200).getTime();
+		expect(formatTurnCardTiming({ startedAtMs, completedAtMs })).toBe(
+			"turn 2026-10-03 21:47:12 → 21:47:15 · 3.2s",
 		);
 	});
 });

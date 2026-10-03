@@ -2,26 +2,22 @@
 
 A native [Oh My Pi](https://omp.sh) plugin that records timing at the OMP turn boundary and can optionally record each tool execution from `tool_call` to `tool_result`.
 
-Turn timing is enabled by default:
+Timing is added to OMP's existing tool cards instead of creating a separate card:
 
 ```text
-◷ turn 2026-10-03 21:47:12 → 21:47:15 · 3.2s
+Bash  printf 'hello\n'
+  2026-10-03 21:47:12.103 → 21:47:12.792
+  turn 2026-10-03 21:47:12 → 21:47:15 · 3.2s
 ```
 
-Optional tool timing keeps millisecond clock precision:
+`showTurnTiming` is enabled by default. On a tool-bearing turn, the turn range is attached to the last completed tool card. `showToolTiming` is optional and adds the tool's absolute start/end clock to that tool's own card; OMP's native card already shows the elapsed execution duration.
 
-```text
-◷ tool bash 2026-10-03 21:47:12.103 → 21:47:12.792 · 689ms
-```
+The plugin patches only the presentation layer. It does not modify the actual tool output or inject timing text into provider context. A terminal turn with no tool card has nowhere to attach its timestamp, so that case alone falls back to a small transcript timing card after the agent settles.
 
-Tool-bearing turns queue their tool cards and turn card onto the continuation boundary that already exists after tool execution, so long-running Chappie/ChatGPT-driven OMP sessions do not have to wait for `agent_end` and the plugin does not create a synthetic model turn. Terminal/no-tool turns are rendered once the agent settles.
-
-Structured timing records are also stored as session metadata:
+Structured timing records are also stored as session metadata and are used to restore in-card timing after session resume:
 
 - `omp-turn-timestamps.turn`
 - `omp-turn-timestamps.tool` when tool timing is enabled
-
-Visible timing cards are filtered from future provider context, so they do not consume model context or affect model behavior.
 
 ## Install
 

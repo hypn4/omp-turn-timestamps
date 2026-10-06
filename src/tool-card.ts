@@ -214,7 +214,7 @@ function appendAnsiTiming(lines: readonly string[], segments: readonly string[],
 	return next;
 }
 
-function fallbackTimingRow(summary: string): NativeNodeLike {
+function nativeTimingRow(summary: string): NativeNodeLike {
 	return {
 		k: "text",
 		p: {
@@ -277,7 +277,7 @@ export function patchToolExecutionDescribe(constructor: ToolExecutionConstructor
 
 		return {
 			...node,
-			c: [...(node.c ?? []), fallbackTimingRow(summary)],
+			c: [...(node.c ?? []), nativeTimingRow(summary)],
 		};
 	};
 

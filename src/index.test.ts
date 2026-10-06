@@ -281,7 +281,7 @@ describe("turn timestamps extension", () => {
 		}
 	});
 
-	test("uses a custom card only when a turn has no tool card to attach to", async () => {
+	test("records no-tool turns as metadata without rendering a standalone card", async () => {
 		clearToolCardTimingsForTests();
 		const originalNow = Date.now;
 		const start = new Date(2026, 9, 3, 22, 10, 0).getTime();
@@ -289,21 +289,26 @@ describe("turn timestamps extension", () => {
 		Date.now = () => now;
 
 		try {
-			const { handlers, sent } = createHarness();
+			const { handlers, sent, entries } = createHarness();
 			await handlers.get("turn_start")?.({ type: "turn_start", turnIndex: 4, timestamp: start }, ctx);
 			now += 2_000;
 			await handlers.get("turn_end")?.(
 				{ type: "turn_end", turnIndex: 4, message: {}, toolResults: [] },
 				ctx,
 			);
-			expect(sent).toHaveLength(0);
 
-			await handlers.get("agent_end")?.({ type: "agent_end", messages: [] }, ctx);
-			expect(sent).toHaveLength(1);
-			expect(sent[0]?.message.customType).toBe("omp-turn-timestamp");
-			expect(sent[0]?.message.content).toBe(
-				"◷ turn 2026-10-03 22:10:00 → 22:10:02 · 2s",
-			);
+			expect(sent).toHaveLength(0);
+			expect(handlers.has("agent_end")).toBe(false);
+			expect(handlers.has("context")).toBe(false);
+			expect(entries).toContainEqual({
+				customType: "omp-turn-timestamps.turn",
+				data: {
+					turnIndex: 4,
+					startedAt: new Date(start).toISOString(),
+					completedAt: new Date(start + 2_000).toISOString(),
+					elapsedMs: 2_000,
+				},
+			});
 		} finally {
 			Date.now = originalNow;
 		}
@@ -355,29 +360,4 @@ describe("turn timestamps extension", () => {
 		});
 	});
 
-	test("removes the no-tool fallback card from provider context", async () => {
-		const { handlers } = createHarness();
-		const userMessage = { role: "user", content: "hello", timestamp: 1 };
-		const breadcrumb = {
-			role: "custom",
-			customType: "omp-turn-timestamp",
-			content: "timing",
-			display: true,
-			timestamp: 2,
-		};
-		const otherCustom = {
-			role: "custom",
-			customType: "other-extension",
-			content: "keep",
-			display: true,
-			timestamp: 3,
-		};
-
-		const result = await handlers.get("context")?.({
-			type: "context",
-			messages: [userMessage, breadcrumb, otherCustom],
-		});
-
-		expect(result.messages).toEqual([userMessage, otherCustom]);
-	});
 });

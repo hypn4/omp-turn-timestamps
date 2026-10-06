@@ -22,7 +22,7 @@ At very narrow widths it can expand to separate date, turn, and tool rows; if ev
 
 `showTurnTiming` is enabled by default. On a tool-bearing turn, the turn range and its elapsed time are attached to the last completed tool card. `showToolTiming` is optional and adds the tool's absolute start/end clock to that tool's own card. OMP already renders the tool elapsed duration, so the plugin deliberately does not repeat the tool duration unless `showToolDuration` is enabled.
 
-The plugin patches only the presentation layer. It does not modify the actual tool output or inject timing text into provider context. A terminal turn with no tool card has nowhere to attach its timestamp, so that case alone falls back to a small transcript timing card after the agent settles.
+The plugin patches only the presentation layer. It does not modify the actual tool output or inject timing text into provider context. If a turn has no tool card, its timing is recorded as session metadata only; the plugin deliberately renders no standalone timing card.
 
 Structured timing records are also stored as session metadata and are used to restore in-card timing after session resume:
 

@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { formatTurnTimingLine, type Timing, type ToolDisplayOptions } from "./format";
+import { type Timing, type ToolDisplayOptions } from "./format";
 import {
 	installToolCardTimingPatch,
 	setToolCardTiming,
@@ -7,7 +7,6 @@ import {
 } from "./tool-card";
 
 const PLUGIN_NAME = "omp-turn-timestamps";
-const TURN_CUSTOM_TYPE = "omp-turn-timestamp";
 const TURN_RECORD_TYPE = "omp-turn-timestamps.turn";
 const TOOL_RECORD_TYPE = "omp-turn-timestamps.tool";
 
@@ -32,7 +31,6 @@ interface ActiveTurn {
 	startedAtMs: number;
 	expectedToolResults: number;
 	completedToolResults: number;
-	turnTimingAttached: boolean;
 	displayToolCallId?: string;
 	displayCompletedAtMs?: number;
 	settings: TimingSettings;
@@ -164,7 +162,6 @@ function createExtension(loadSettings: SettingsLoader) {
 	return function turnTimestamps(pi: ExtensionAPI) {
 		let activeTurn: ActiveTurn | undefined;
 		const toolStarts = new Map<string, ToolStart>();
-		const pendingTerminalTurns: Array<{ details: TurnTimestampDetails; timing: Timing }> = [];
 		let cachedSettings = DEFAULT_SETTINGS;
 
 		pi.setLabel("Turn timestamps");
@@ -210,7 +207,6 @@ function createExtension(loadSettings: SettingsLoader) {
 				startedAtMs: event.timestamp,
 				expectedToolResults: 0,
 				completedToolResults: 0,
-				turnTimingAttached: false,
 				settings: cachedSettings,
 				settingsReady: refreshSettings(ctx.cwd),
 			};
@@ -272,7 +268,6 @@ function createExtension(loadSettings: SettingsLoader) {
 					startedAtMs: turn.startedAtMs,
 					completedAtMs,
 				};
-				turn.turnTimingAttached = true;
 				turn.displayToolCallId = event.toolCallId;
 				turn.displayCompletedAtMs = completedAtMs;
 				setToolCardTiming(event.toolCallId, { turn: timing });
@@ -290,38 +285,11 @@ function createExtension(loadSettings: SettingsLoader) {
 			const details = timingDetails(turn.turnIndex, timing, turn.displayToolCallId);
 			pi.appendEntry(TURN_RECORD_TYPE, details);
 
-			if (turn.settings.showTurnTiming && !turn.turnTimingAttached) {
-				pendingTerminalTurns.push({ details, timing });
-			}
 
 			activeTurn = undefined;
 			toolStarts.clear();
 		});
 
-		pi.on("agent_end", async event => {
-			if (event.willContinue || pendingTerminalTurns.length === 0) return;
-			const pending = pendingTerminalTurns.splice(0);
-			for (const { details, timing } of pending) {
-				pi.sendMessage<TurnTimestampDetails>(
-					{
-						customType: TURN_CUSTOM_TYPE,
-						content: formatTurnTimingLine(timing),
-						display: true,
-						details,
-					},
-					{ triggerTurn: false },
-				);
-			}
-		});
-
-		// The only visible custom message left is the fallback for a terminal
-		// no-tool turn. Keep it out of future provider context.
-		pi.on("context", async event => {
-			const messages = event.messages.filter(
-				message => message.role !== "custom" || message.customType !== TURN_CUSTOM_TYPE,
-			);
-			return messages.length === event.messages.length ? undefined : { messages };
-		});
 	};
 }
 

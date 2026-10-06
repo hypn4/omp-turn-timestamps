@@ -1,7 +1,7 @@
 {
   "name": "omp-turn-timestamps",
-  "version": "0.4.1",
-  "description": "Native Oh My Pi plugin that adds adaptive per-turn and configurable per-tool timestamps directly to existing tool cards without adding them to model context.",
+  "version": "0.4.2",
+  "description": "Native Oh My Pi plugin that adds adaptive per-turn and configurable per-tool timestamps to existing tool cards, with metadata-only timing for turns that have no tool card.",
   "license": "MIT",
   "type": "module",
   "repository": {
